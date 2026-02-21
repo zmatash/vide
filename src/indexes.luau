@@ -1,30 +1,31 @@
 local flags = require "./flags"
 local branch = require "./branch"
-local source = (require "./source").source
+local createSource = require "./createSource"
 local effect = require "./effect"
 local timeout = require "./timeout" ()
 
 type Array<T> = { T }
 type Map<K, V> = { [K]: V }
-type Source<T> = () -> T
+type Getter<T> = () -> T
+type Setter<T> = (value: T) -> T
 
 local function indexes<K, V, Obj>(
-    input: Source<Map<K, V>>,
-    component: (Source<V>, K, Source<boolean>) -> (Obj, ...number)
-): Source<Array<Obj>>
+    input: Getter<Map<K, V>>,
+    component: (Getter<V>, K, Getter<boolean>) -> (Obj, ...number)
+): Getter<Array<Obj>>
     local update_count = 0
     local scopes = {} :: Map<K, {
         destroy: () -> (),
         object: Obj,
         value: V?,
-        value_source: (V?) -> V,
+        set_value: Setter<V?>,
         count: number,
         delay: number,
-        present: (boolean?) -> boolean,
+        set_present: Setter<boolean>,
         timeout: { cancel: boolean }?,
     }>
 
-    local output = source({} :: Array<Obj>)
+    local output, set_output = createSource({} :: Array<Obj>)
     local function update_output()
         local objects = table.create(4)
 
@@ -32,7 +33,7 @@ local function indexes<K, V, Obj>(
             table.insert(objects, scope.object)
         end
 
-        output(objects)
+        set_output(objects)
     end
 
     effect(function()
@@ -48,28 +49,28 @@ local function indexes<K, V, Obj>(
             local scope = scopes[i]
 
             if scope == nil then -- create new scope and create component
-                local value_source = source(v)
-                local present = source(false)
+                local get_value, set_value = createSource(v)
+                local get_present, set_present = createSource(false)
 
                 local delay = nil :: number?
                 local destroy, object = branch(function()
-                    local object, t = component(value_source, i, present)
+                    local object, t = component(get_value, i, get_present)
                     delay = t
                     return object
                 end)
 
-                present(true)
-                
+                set_present(true)
+
                 children_need_update = true
 
                 scopes[i] = {
                     destroy = destroy,
                     object = object,
                     value = v,
-                    value_source = value_source,
+                    set_value = set_value,
                     count = count,
                     delay = delay or 0,
-                    present = present,
+                    set_present = set_present,
                     timeout = nil,
                 }
             else -- update scope
@@ -79,11 +80,11 @@ local function indexes<K, V, Obj>(
                     if scope.timeout then -- index is in input table again; cancel destruction
                         scope.timeout.cancel = true
                         scope.timeout = nil
-                        scope.present(true)
+                        scope.set_present(true)
                     end
-                    
+
                     scope.value = v
-                    scope.value_source(v)
+                    scope.set_value(v)
                 end
             end
         end
@@ -91,7 +92,7 @@ local function indexes<K, V, Obj>(
         -- destroy scopes
         for i, scope in scopes do
             if scope.count < count then -- if count is not latest then index is no longer in the input table
-                scope.present(false)
+                scope.set_present(false)
 
                 if scope.delay == 0 then
                     scope.destroy()

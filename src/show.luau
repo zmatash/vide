@@ -1,23 +1,23 @@
-local source = (require "./source").source
+local createSource = require "./createSource"
 local derive = require "./derive"
 local effect = require "./effect"
 local untrack = require "./untrack"
 local switch = require "./switch"
 
 type Array<T> = { T }
-type Source<T> = () -> T
+type Getter<T> = () -> T
 
 local function show<T, Obj>(
-    input: Source<T?>,
-    component: (Source<T>, Source<boolean>) -> (Obj, ...number),
-    fallback: ((Source<boolean>) -> (Obj, ...number))?
-): Source<nil | Obj | Array<Obj>>
-    local filtered_input = source()
+    input: Getter<T?>,
+    component: (Getter<T>, Getter<boolean>) -> (Obj, ...number),
+    fallback: ((Getter<boolean>) -> (Obj, ...number))?
+): Getter<nil | Obj | Array<Obj>>
+    local filtered_input, set_filtered_input = createSource()
 
     effect(function()
-        local v = input() 
+        local v = input()
         if v then
-            filtered_input(v)
+            set_filtered_input(v)
         end
     end)
 

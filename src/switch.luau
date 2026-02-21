@@ -1,26 +1,27 @@
 local branch = require "./branch"
-local source = (require "./source").source
+local createSource = require "./createSource"
 local effect = require "./effect"
 local timeout = require "./timeout" ()
 
 type Array<T> = { T }
 type Map<K, V> = { [K]: V }
-type Source<T> = () -> T
-type Component<T> = (Source<boolean>) -> (T, ...number)
+type Getter<T> = () -> T
+type Setter<T> = (value: T) -> T
+type Component<T> = (Getter<boolean>) -> (T, ...number)
 
 local function switch_map<K, Obj>(
-    input: Source<K>,
+    input: Getter<K>,
     map: Map<K, Component<Obj>>
-): Source<nil | Obj | Array<Obj>>
+): Getter<nil | Obj | Array<Obj>>
     local scopes = {} :: Map<K, {
         destroy: () -> (),
         object: Obj,
         delay: number,
-        present: (boolean?) -> boolean,
+        set_present: Setter<boolean>,
         timeout: { cancel: boolean }?
     }>
 
-    local output = source(nil :: nil | Obj | Array<Obj>)
+    local output, set_output = createSource(nil :: nil | Obj | Array<Obj>)
     local function update_output()
         local objects = {}
 
@@ -28,7 +29,7 @@ local function switch_map<K, Obj>(
             table.insert(objects, scope.object)
         end
 
-        output(
+        set_output(
             if objects[2] then objects
             elseif objects[1] then objects[1]
             else nil
@@ -42,7 +43,7 @@ local function switch_map<K, Obj>(
         for k, scope in scopes do
             if k == key then continue end
 
-            scope.present(false)
+            scope.set_present(false)
 
             if scope.delay == 0 then
                 scope.destroy()
@@ -63,7 +64,7 @@ local function switch_map<K, Obj>(
             local scope = scopes[key]
 
             if scope then
-                scope.present(true)
+                scope.set_present(true)
 
                 if scope.timeout then
                     scope.timeout.cancel = true
@@ -77,22 +78,22 @@ local function switch_map<K, Obj>(
                         error("map must map a value to a function", 0)
                     end
 
-                    local present = source(false)
+                    local get_present, set_present = createSource(false)
 
                     local delay = nil :: number?
                     local destroy, object = branch(function()
-                        local object, t = component(present)
+                        local object, t = component(get_present)
                         delay = t
                         return object
                     end)
 
-                    present(true)
+                    set_present(true)
 
                     scopes[key] = {
                         destroy = destroy,
                         object = object,
                         delay = delay or 0,
-                        present = present,
+                        set_present = set_present,
                         timeout = nil
                     }
                 end
@@ -105,7 +106,7 @@ local function switch_map<K, Obj>(
     return output
 end
 
-local function switch<K, Obj>(input: Source<K>): (map: Map<K, Component<Obj>>) -> Source<nil | Obj | Array<Obj>>
+local function switch<K, Obj>(input: Getter<K>): (map: Map<K, Component<Obj>>) -> Getter<nil | Obj | Array<Obj>>
     return function(map)
         return switch_map(input, map)
     end

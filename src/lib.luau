@@ -5,9 +5,7 @@ local branch = require "./branch"
 local mount = require "./mount"
 local create = require "./create"
 local apply = require "./apply"
-local source_module = require "./source"
-local source = source_module.source
-local createSource = source_module.createSource
+local createSource = require "./createSource"
 local effect = require "./effect"
 local derive = require "./derive"
 local cleanup = require "./cleanup"
@@ -19,23 +17,17 @@ local switch = require "./switch"
 local show = require "./show"
 local indexes = require "./indexes"
 local values = require "./values"
-local spring, update_springs = require "./spring"()
 local action = require "./action"()
 local changed = require "./changed"
 local timeout, update_timeouts = require "./timeout"()
 local flags = require "./flags"
 
-export type Source<T> = source_module.Source<T>
-export type Getter<T> = source_module.Getter<T>
-export type Setter<T> = source_module.Setter<T>
+export type Getter<T> = () -> T
+export type Setter<T> = (value: T) -> T
 export type Context<T> = context.Context<T>
 
 local function step(dt: number)
     if game then debug.profilebegin("VIDE STEP") end
-
-    if game then debug.profilebegin("VIDE SPRING") end
-    update_springs(dt)
-    if game then debug.profileend() end
 
     if game then debug.profilebegin("VIDE SCHEDULER") end
     update_timeouts(dt)
@@ -56,7 +48,6 @@ local vide = {
     --branch = branch,
     mount = mount,
     create = create,
-    source = source,
     createSource = createSource,
     effect = effect,
     derive = derive,
@@ -71,9 +62,6 @@ local vide = {
     read = read,
     batch = batch,
     context = context,
-
-    -- animations
-    spring = spring,
 
     -- actions
     action = action,
