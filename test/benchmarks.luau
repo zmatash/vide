@@ -1,8 +1,9 @@
+--!strict
+
 local testkit = require("./testkit")
 local BENCH, START = testkit.benchmark()
 
 local vide = require("../../vide")
-local source = vide.source
 local derive = vide.derive
 local effect = vide.effect
 local indexes = vide.indexes
@@ -12,6 +13,7 @@ local cleanup = vide.cleanup
 local untrack = vide.untrack
 local create = vide.create
 local context = vide.context
+local createSource = vide.createSource
 
 assert(not vide.strict)
 
@@ -35,43 +37,43 @@ BENCH("create source", function()
 	local cache = table.create(N)
 
 	for i = 1, START(N) do
-		cache[i] = source(1)
+		cache[i] = createSource(1) -- stores getter (first return)
 	end
 end)
 
 BENCH("get value", function()
-	local src = source(1)
+	local get = createSource(1)
 
 	for i = 1, START(N) do
-		src()
+		get()
 	end
 end)
 
 BENCH("set value", function()
-	local src = source(1)
+	local get, set = createSource(1)
 
 	for i = 1, START(N) do
-		src(i)
+		set(i)
 	end
 end)
 
 ROOT_BENCH("derive 1 source", function()
 	local cache = table.create(N)
-	local src = source(1)
+	local get = createSource(1)
 
 	for i = 1, START(N) do
 		cache[i] = derive(function()
-			return src()
+			return get()
 		end)
 	end
 end)
 
 ROOT_BENCH("derive 4 sources", function()
 	local cache = table.create(N)
-	local src = vide.source(1)
-	local src2 = vide.source(2)
-	local src3 = vide.source(3)
-	local src4 = vide.source(4)
+	local src = vide.createSource(1)
+	local src2 = vide.createSource(2)
+	local src3 = vide.createSource(3)
+	local src4 = vide.createSource(4)
 
 	for i = 1, START(N) do
 		cache[i] = derive(function()
@@ -83,50 +85,50 @@ end)
 TITLE("graphs")
 
 ROOT_BENCH("update 1->1 graph", function()
-	local src = source(1)
+	local get, set = createSource(1)
 
 	local _derived = derive(function()
-		return src()
+		return get()
 	end)
 
 	for i = 1, START(N) do
-		src(i)
+		set(i)
 	end
 end)
 
 ROOT_BENCH("update 1->1 graph with cleanup", function()
-	local src = source(1)
+	local get, set = createSource(1)
 
 	derive(function()
 		cleanup(function() end)
-		return src()
+		return get()
 	end)
 
 	for i = 1, START(N) do
-		src(i)
+		set(i)
 	end
 end)
 
 ROOT_BENCH("update 1->1000 graph", function()
-	local src = source(-1)
+	local get, set = createSource(-1)
 
 	for i = 1, 1000 do
 		derive(function()
-			return src()
+			return get()
 		end)
 	end
 
-	src(0)
+	set(0)
 
 	for i = 1, START(10) do
-		src(i)
+		set(i)
 	end
 end)
 
 ROOT_BENCH("update 1->1->1->1...1000 graph", function()
-	local src = source(-1)
+	local get, set = createSource(-1)
 
-	local last = src
+	local last = get
 	for i = 1, 1000 do
 		local l = last
 		last = derive(function()
@@ -134,43 +136,45 @@ ROOT_BENCH("update 1->1->1->1...1000 graph", function()
 		end)
 	end
 
-	src(0)
+	set(0)
 
 	for i = 1, START(10) do
-		src(i)
+		set(i)
 	end
 end)
 
 -- todo: why does it hang at 1k? it didn't before
 ROOT_BENCH("update 500->1 graph", function()
-	local srcs = {}
+	local srcs: { { get: () -> any, set: (any) -> () } } = {}
 	for i = 1, 500 do
-		srcs[i] = source(0)
+		local get, set = createSource(0)
+		srcs[i] = { get = get, set = set }
 	end
 
 	derive(function()
 		for i = 1, 500 do
-			srcs[i]()
+			srcs[i].get()
 		end
 		return false
 	end)
 
 	for i = 1, START(1) do
 		for idx = 1, 500 do
-			srcs[idx](i)
+			srcs[idx].set(i)
 		end
 	end
 end)
 
 ROOT_BENCH("update 1000->1 graph (batched)", function()
-	local srcs = {}
+	local srcs: { { get: () -> any, set: (any) -> () } } = {}
 	for i = 1, 1000 do
-		srcs[i] = source(0)
+		local get, set = createSource(0)
+		srcs[i] = { get = get, set = set }
 	end
 
 	derive(function()
 		for i = 1, 1000 do
-			srcs[i]()
+			srcs[i].get()
 		end
 		return false
 	end)
@@ -178,7 +182,7 @@ ROOT_BENCH("update 1000->1 graph (batched)", function()
 	for i = 1, START(1) do
 		batch(function()
 			for idx = 1, 1000 do
-				srcs[idx](i)
+				srcs[idx].set(i)
 			end
 		end)
 	end
@@ -186,21 +190,22 @@ end)
 
 -- todo: optimize this case
 ROOT_BENCH("update 1000 1->1 common extern. graph", function()
-	local ext = source(-1)
+	local ext, setExt = createSource(-1)
 
-	local srcs = {}
+	local srcs: { { get: () -> any, set: (any) -> () } } = {}
 	for i = 1, 1000 do
-		srcs[i] = source(0)
+		local get, set = createSource(0)
+		srcs[i] = { get = get, set = set }
 		derive(function()
-			return srcs[i]() + ext()
+			return srcs[i].get() + ext()
 		end)
 	end
 
-	ext(0)
+	setExt(0)
 
 	for i = 1, START(10) do
 		for idx = 1, 1000 do
-			srcs[idx](i)
+			srcs[idx].set(i)
 		end
 	end
 end)
@@ -238,7 +243,7 @@ ROOT_BENCH("bind property", function()
 	local apply = require("../src/apply")
 
 	local instance = create("Frame")({})
-	local src = source(1)
+	local src = createSource(1)
 
 	for i = 1, START(N) do
 		apply(instance, {
@@ -253,14 +258,14 @@ ROOT_BENCH("update binding", function()
 	local apply = require("../src/apply")
 
 	local instance = create("Frame")({})
-	local src = source(1)
+	local get, set = createSource(1)
 
 	apply(instance, {
-		Text = src,
+		Text = get,
 	})
 
 	for i = 1, START(N) do
-		src(i)
+		set(i)
 	end
 
 	return nil
@@ -278,11 +283,11 @@ ROOT_BENCH("switch()", function()
 		end
 	end
 
-	local input = source(0)
+	local input, setInput = createSource(0)
 	vide.switch(input)(map)
 
 	for i = 1, START(N) do
-		input(bit32.band(i, M - 1) + 1) -- i % m + 1
+		setInput(bit32.band(i, M - 1) + 1) -- i % m + 1
 	end
 end)
 
@@ -297,7 +302,7 @@ ROOT_BENCH("indexes() all new", function()
 		data[i] = i
 	end
 
-	local src = source(data)
+	local src = createSource(data)
 
 	START(N)
 
@@ -315,7 +320,7 @@ ROOT_BENCH("indexes() no change", function()
 		data[i] = i
 	end
 
-	local src = source(data)
+	local src, setSrc = createSource(data)
 
 	local _list = indexes(src, function(v, i)
 		return {}
@@ -323,7 +328,7 @@ ROOT_BENCH("indexes() no change", function()
 
 	START(N)
 
-	src(data)
+	setSrc(data)
 
 	return nil
 end)
@@ -335,13 +340,13 @@ ROOT_BENCH("indexes() all change", function()
 		data[i] = i
 	end
 
-	local src = source(data)
+	local src, setSrc = createSource(data)
 
 	local _list = indexes(src, function(v, i)
 		return {}
 	end)
 
-	--src(src()) -- fill double buffer
+	--setSrc(src()) -- fill double buffer
 
 	for i, v in data do
 		data[i] = v + 1
@@ -349,7 +354,7 @@ ROOT_BENCH("indexes() all change", function()
 
 	START(N)
 
-	src(data)
+	setSrc(data)
 end)
 
 ROOT_BENCH("indexes() all remove", function()
@@ -359,7 +364,7 @@ ROOT_BENCH("indexes() all remove", function()
 		data[i] = i
 	end
 
-	local src = source(data)
+	local src, setSrc = createSource(data)
 
 	local _list = indexes(src, function(v, i)
 		return {}
@@ -369,7 +374,7 @@ ROOT_BENCH("indexes() all remove", function()
 
 	START(N)
 
-	src(data)
+	setSrc(data)
 
 	return nil
 end)
@@ -383,7 +388,7 @@ ROOT_BENCH("values() all new", function()
 		data[i] = {}
 	end
 
-	local src = source(data)
+	local src = createSource(data)
 
 	START(N)
 
@@ -401,17 +406,17 @@ ROOT_BENCH("values() no change", function()
 		data[i] = {}
 	end
 
-	local src = source(data)
+	local src, setSrc = createSource(data)
 
 	local _list = values(src, function(v, i)
 		return {}
 	end)
 
-	src(src()) -- fill double buffer
+	setSrc(src()) -- fill double buffer
 
 	START(N)
 
-	src(data)
+	setSrc(data)
 end)
 
 ROOT_BENCH("values() all change", function()
@@ -421,13 +426,13 @@ ROOT_BENCH("values() all change", function()
 		data[i] = {}
 	end
 
-	local src = source(data)
+	local src, setSrc = createSource(data)
 
 	local _list = values(src, function(v, i)
 		return {}
 	end)
 
-	src(src()) -- fill double buffer
+	setSrc(src()) -- fill double buffer
 
 	for i = 1, N do
 		local r = math.random(1, #data)
@@ -436,7 +441,7 @@ ROOT_BENCH("values() all change", function()
 
 	START(N)
 
-	src(data)
+	setSrc(data)
 end)
 
 ROOT_BENCH("values() all remove", function()
@@ -446,7 +451,7 @@ ROOT_BENCH("values() all remove", function()
 		data[i] = {}
 	end
 
-	local src = source(data)
+	local src, setSrc = createSource(data)
 
 	local _list = values(src, function(v, i)
 		return {}
@@ -456,7 +461,7 @@ ROOT_BENCH("values() all remove", function()
 
 	START(N)
 
-	src(data)
+	setSrc(data)
 end)
 
 TITLE("context()")
@@ -516,9 +521,9 @@ end)
 TITLE("spring()")
 
 ROOT_BENCH("spring update", function()
-	local root, source, spring = vide.root, vide.source, vide.spring
+	local root, createSource2, spring = vide.root, vide.createSource, vide.spring
 
-	local src = source(0)
+	local src, setSrc = createSource2(0)
 
 	root(function()
 		for i = 1, N do
@@ -527,23 +532,23 @@ ROOT_BENCH("spring update", function()
 
 		START(N)
 
-		src(1)
+		setSrc(1)
 
 		return nil
 	end)
 end)
 
 ROOT_BENCH("spring step", function()
-	local root, source, spring = vide.root, vide.source, vide.spring
+	local root, createSource2, spring = vide.root, vide.createSource, vide.spring
 
-	local src = source(0)
+	local src, setSrc = createSource2(0)
 
 	root(function()
 		for i = 1, N do
 			spring(src)
 		end
 
-		src(1)
+		setSrc(1)
 
 		START(N)
 

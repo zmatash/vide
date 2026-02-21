@@ -67,6 +67,8 @@ type Instances = {
 	UIGradient: UIGradient,
 	UIGridLayout: UIGridLayout,
 	UIListLayout: UIListLayout,
+	UIFlexItem: UIFlexItem,
+	UIStroke: UIStroke,
 	Camera: Camera,
 	WorldModel: WorldModel,
 }
