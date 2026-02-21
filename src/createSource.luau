@@ -1,4 +1,4 @@
-local graph = require "./graph"
+local graph = require("./graph")
 type Node<T> = graph.Node<T>
 local create_source_node = graph.create_source_node
 local push_scope_as_child_of = graph.push_scope_as_child_of
@@ -8,24 +8,24 @@ export type Getter<T> = () -> T
 export type Setter<T> = (value: T) -> T
 
 local function createSource<T>(initial_value: T): (Getter<T>, Setter<T>)
-    local node = create_source_node(initial_value)
+	local node = create_source_node(initial_value)
 
-    local function getter(): T
-        push_scope_as_child_of(node)
-        return node.cache
-    end
+	local function getter(): T
+		push_scope_as_child_of(node)
+		return node.cache
+	end
 
-    local function setter(v: T): T
-        if node.cache == v and (type(v) ~= "table" or table.isfrozen(v)) then
-            return v
-        end
+	local function setter(v: T): T
+		if node.cache == v and (type(v) ~= "table" or table.isfrozen(v)) then
+			return v
+		end
 
-        node.cache = v
-        update_descendants(node)
-        return v
-    end
+		node.cache = v
+		update_descendants(node)
+		return v
+	end
 
-    return getter, setter
+	return getter, setter
 end
 
 return createSource :: <T>(initial_value: T?) -> (Getter<T>, Setter<T>)

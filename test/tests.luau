@@ -9,7 +9,6 @@ local vide = require "../../vide"
     local root = vide.root
     local mount = vide.mount
     local create = vide.create
-    local source = vide.source
     local createSource = vide.createSource
     local effect = vide.effect
     local derive = vide.derive
@@ -323,7 +322,7 @@ end)
 TEST("mount()", function()
     local screen = create "ScreenGui" {}
 
-    local text = source "foo"
+    local text, setText = createSource("foo")
     local count = 0
 
     local unmount = mount(function()
@@ -341,7 +340,7 @@ TEST("mount()", function()
     CHECK(label)
     CHECK(label.Text == "foo")
 
-    text "bar"
+    setText("bar")
     CHECK(label.Text == "bar")
     CHECK(count == 0)
 
@@ -359,70 +358,6 @@ TEST("root()", function()
 
     CHECK(count == 1)
 end)
-
-TEST("source()", wrap_root(function()
-    do CASE "create source"
-        local src = source(1)
-        CHECK(src() == 1)
-    end
-
-    do CASE "set and get source value"
-        local src = source(1)
-        src(2)
-        CHECK(src() == 2)
-    end
-
-    do CASE "does not update if same value"
-        local src = source(1)
-
-        local count = 0
-        effect(function()
-            src()
-            count += 1
-        end)
-
-        CHECK(count == 1)
-        src(1)
-        CHECK(count == 1)
-        src(2)
-        CHECK(count == 2)
-    end
-
-    do CASE "does update if same value is mutable table"
-        local src = source {}
-
-        local count = 0
-        effect(function()
-            src()
-            count += 1
-        end)
-
-        CHECK(count == 1)
-        src(src())
-        CHECK(count == 2)
-    end
-
-    do CASE "does not update if same value is frozen table"
-        local a = table.freeze {}
-        local b = table.freeze {}
-
-        local src = source(a)
-
-        local count = 0
-        effect(function()
-            src()
-            count += 1
-        end)
-
-        CHECK(count == 1)
-        src(a)
-        CHECK(count == 1)
-        src(b)
-        CHECK(count == 2)
-        src(b)
-        CHECK(count == 2)
-    end
-end))
 
 TEST("createSource()", wrap_root(function()
     do CASE "create source with getter and setter"
@@ -502,20 +437,20 @@ end))
 
 TEST("derive()", wrap_root(function()
     do CASE "derive new value on source change"
-        local a = source(1)
-        local b = source(2)
+        local a, setA = createSource(1)
+        local b, setB = createSource(2)
 
         local c = derive(function()
             return tostring(a() + b())
         end)
 
         CHECK(c() == "3")
-        a(2)
+        setA(2)
         CHECK(c() == "4")
     end
 
     do CASE "derive wrapped source"
-        local a = source(1)
+        local a, setA = createSource(1)
 
         local b = function()
             return tostring(a())
@@ -526,12 +461,12 @@ TEST("derive()", wrap_root(function()
         end)
 
         CHECK(c() == 1)
-        a(2)
+        setA(2)
         CHECK(c() == 2)
     end
 
     do CASE "does not update if same value"
-        local num = source(0)
+        local num, setNum = createSource(0)
 
         local is_even = derive(function()
             return bit32.band(num(), 0b01) == 0
@@ -543,20 +478,20 @@ TEST("derive()", wrap_root(function()
             is_even()
             count += 1
         end)
-        
-        num(1) -- odd
+
+        setNum(1) -- odd
         CHECK(count == 2)
-        num(2) -- even
+        setNum(2) -- even
         CHECK(count == 3)
-        num(4) -- even
+        setNum(4) -- even
         CHECK(count == 3)
-        num(5) -- odd
+        setNum(5) -- odd
         CHECK(count == 4)
     end
 
     do CASE "conditional derive"
-        local a = source(false)
-        local b = source(false)
+        local a, setA = createSource(false)
+        local b, setB = createSource(false)
 
         local c = derive(function()
             return
@@ -569,24 +504,24 @@ TEST("derive()", wrap_root(function()
 
         effect(function() c(); count += 1 end)
 
-        b(true)
+        setB(true)
         CHECK(c() == "b")
         CHECK(count == 2)
-        a(true)
+        setA(true)
         CHECK(c() == "a")
         CHECK(count == 3)
-        b(false)
+        setB(false)
         CHECK(count == 3)
-        b(true)
+        setB(true)
         CHECK(count == 3)
-        a(false)
+        setA(false)
         CHECK(c() == "b")
         CHECK(count == 4)
     end
 
     do CASE "owner not disconnected"
         local count = 0
-        local a = source(0)
+        local a, setA = createSource(0)
 
         local destroy = mount(function()
             local _b = derive(function()
@@ -599,7 +534,7 @@ TEST("derive()", wrap_root(function()
         end)
 
         CHECK(count == 0)
-        a(1) -- b clears parents (should not clear owner)
+        setA(1) -- b clears parents (should not clear owner)
         CHECK(count == 1)
         destroy()
         CHECK(count == 2)
@@ -644,8 +579,8 @@ TEST("derive()", wrap_root(function()
     -- end
 
     do CASE "garbage collection"
-        -- check that `b` does not allow gc of `a`        
-        local a = source(1)
+        -- check that `b` does not allow gc of `a`
+        local a, _setA = createSource(1)
 
         local _b = derive(function()
             return a()
@@ -662,8 +597,8 @@ end))
 
 TEST("effect()", wrap_root(function()
     do CASE "rerun on source change"
-        local a = source(1)
-        local b = source(1)
+        local a, setA = createSource(1)
+        local b, setB = createSource(1)
 
         local count = 0
         effect(function()
@@ -673,30 +608,30 @@ TEST("effect()", wrap_root(function()
         end)
 
         CHECK(count == 1)
-        a(2)
+        setA(2)
         CHECK(count == 2)
-        b(2)
+        setB(2)
         CHECK(count == 3)
     end
 
     do CASE "rerun on derived source change"
-        local num = source(0)
+        local num, setNum = createSource(0)
 
         local text = derive(function() return tostring(num()) end)
-        
+
         local count = 0
         effect(function()
             text()
             count += 1
         end)
 
-        num(1)
+        setNum(1)
 
         CHECK(count == 2)
     end
 
     do CASE "cache"
-        local num = source(0)
+        local num, setNum = createSource(0)
 
         local count
 
@@ -706,7 +641,7 @@ TEST("effect()", wrap_root(function()
             return x + 1
         end, 0)
 
-        num(1)
+        setNum(1)
 
         CHECK(count == 2)
     end
@@ -728,7 +663,7 @@ TEST("cleanup()", wrap_root(function()
     end
 
     do CASE "cleanup on rerun"
-        local src = source(1)
+        local src, setSrc = createSource(1)
 
         local effected = 0
         local cleaned = 0
@@ -737,24 +672,24 @@ TEST("cleanup()", wrap_root(function()
             src()
             effected += 1
             cleanup(function()
-                cleaned += 1  
+                cleaned += 1
             end)
         end)
 
         CHECK(effected == 1)
         CHECK(cleaned == 0)
 
-        src(2)
+        setSrc(2)
 
         CHECK(effected == 2)
         CHECK(cleaned == 1)
     end
 
     do CASE "multiple cleanup"
-        local src = source(1)
+        local src, setSrc = createSource(1)
 
         local queue = {}
-    
+
         effect(function()
             src()
             cleanup(function() table.insert(queue, 1) end)
@@ -762,9 +697,9 @@ TEST("cleanup()", wrap_root(function()
         end)
 
         CHECK(testkit.seq(queue, {}))
-        src(2)
+        setSrc(2)
         CHECK(testkit.seq(queue, { 1, 2 }))
-        src(3)
+        setSrc(3)
         CHECK(testkit.seq(queue, { 1, 2, 1, 2 }))
     end
 
@@ -909,8 +844,8 @@ TEST("create()", wrap_root(function()
     end
 
     do CASE "binding properties to source"
-        local name = source("Hi")
-        local text = source("Bye")
+        local name, setName = createSource("Hi")
+        local text, setText = createSource("Bye")
 
         local label = create "TextLabel" {
             Name = name,
@@ -920,8 +855,8 @@ TEST("create()", wrap_root(function()
         CHECK(label.Name == "Hi")
         CHECK(label.Text == "Bye")
 
-        name "Foo"
-        text "Bar"
+        setName("Foo")
+        setText("Bar")
 
         CHECK(label.Name == "Foo")
         CHECK(label.Text == "Bar")
@@ -931,7 +866,7 @@ TEST("create()", wrap_root(function()
         local count = 0
 
         local destroy = mount(function()
-            local src = source(0)
+            local src, _setSrc = createSource(0)
 
             return create "TextLabel" {
                 Text = function()
@@ -950,7 +885,7 @@ TEST("create()", wrap_root(function()
     end
 
     do CASE "bind same source to multiple instance properties"
-        local src = source "1"
+        local src, setSrc = createSource("1")
 
         local text = create "TextBox" {
             Name = src,
@@ -958,7 +893,7 @@ TEST("create()", wrap_root(function()
             PlaceholderText = src
         }
 
-        src "2"
+        setSrc("2")
 
         CHECK(text.Name == "2")
         CHECK(text.Text == "2")
@@ -966,9 +901,9 @@ TEST("create()", wrap_root(function()
     end
 
     do CASE "bind children"
-        local children = source()
+        local children, setChildren = createSource()
 
-        local a, b, c = 
+        local a, b, c =
             create "TextLabel" { Name = "A" },
             create "TextLabel" { Name = "B" },
             create "TextLabel" { Name = "C" }
@@ -976,21 +911,21 @@ TEST("create()", wrap_root(function()
         local frame = create "Frame" {
             children
         }
-  
-        children { a, b }
+
+        setChildren({ a, b })
 
         CHECK(frame:FindFirstChild "A")
         CHECK(frame:FindFirstChild "B")
 
         -- check that b is removed and c is added while a remains untouched
-        
-        children { a, c }
+
+        setChildren({ a, c })
 
         CHECK(frame:FindFirstChild "A")
         CHECK(frame:FindFirstChild "C")
         CHECK(not frame:FindFirstChild "B")
 
-        children(nil)
+        setChildren(nil)
 
         CHECK(#frame:GetChildren() == 0)
     end
@@ -998,7 +933,7 @@ TEST("create()", wrap_root(function()
     do CASE "parent bound to source"
         local _, wref, destroy = root(function(destroy)
             local frame = create "Frame" { Name = "Parent" }
-            local parent = source(frame :: Frame?)
+            local parent, setParent = createSource(frame :: Frame?)
 
             local wref = weak {
                 create "TextLabel" { Parent = parent, Name = "Child" }
@@ -1007,7 +942,7 @@ TEST("create()", wrap_root(function()
             gc()
             CHECK(wref[1])
 
-            parent(nil)
+            setParent(nil)
 
             return wref, destroy
         end)
@@ -1055,13 +990,13 @@ TEST("create()", wrap_root(function()
         local c = create "Frame" { Name = "c" }
         local d = create "Frame" { Name = "d" }
         local e = create "Frame" { Name = "e" }
-        
-        local children = source {
+
+        local children, setChildren = createSource({
             a,
             { b, c, { d } },
             { { e } }
-        }
-        
+        })
+
         local obj = create "Frame" {
             children
         }
@@ -1072,11 +1007,11 @@ TEST("create()", wrap_root(function()
         CHECK(obj:FindFirstChild("d"))
         CHECK(obj:FindFirstChild("e"))
 
-        children {
+        setChildren({
             b,
             { c, a },
             { { d } }
-        }
+        })
 
         CHECK(obj:FindFirstChild("a"))
         CHECK(obj:FindFirstChild("b"))
@@ -1090,8 +1025,8 @@ TEST("create()", wrap_root(function()
         local b = create "Frame" { Name = "b" } :: Instance
         local c = create "Frame" { Name = "c" } :: Instance
 
-        local nested_children = source { b, c }
-        local children = source { a :: Instance | () -> { Instance }, nested_children }
+        local nested_children, setNestedChildren = createSource({ b, c })
+        local children, setChildren = createSource({ a :: Instance | () -> { Instance }, nested_children })
 
         local parent = create "Frame" {
             Name = "parent",
@@ -1101,27 +1036,27 @@ TEST("create()", wrap_root(function()
         CHECK(parent:FindFirstChild "a")
         CHECK(parent:FindFirstChild "b")
         CHECK(parent:FindFirstChild "c")
-        nested_children {}
+        setNestedChildren({})
         CHECK(parent:FindFirstChild "a")
         CHECK(not parent:FindFirstChild "b")
         CHECK(not parent:FindFirstChild "c")
-        nested_children { b }
+        setNestedChildren({ b })
         CHECK(parent:FindFirstChild "a")
         CHECK(parent:FindFirstChild "b")
         CHECK(not parent:FindFirstChild "c")
-        children { a }
+        setChildren({ a })
         CHECK(parent:FindFirstChild "a")
         CHECK(not parent:FindFirstChild "b")
         CHECK(not parent:FindFirstChild "c")
-        nested_children { b, c }
+        setNestedChildren({ b, c })
         CHECK(parent:FindFirstChild "a")
         CHECK(not parent:FindFirstChild "b")
         CHECK(not parent:FindFirstChild "c")
-        children { a :: Instance | () -> { Instance }, nested_children }
+        setChildren({ a :: Instance | () -> { Instance }, nested_children })
         CHECK(parent:FindFirstChild "a")
         CHECK(parent:FindFirstChild "b")
         CHECK(parent:FindFirstChild "c")
-        nested_children { c }
+        setNestedChildren({ c })
         CHECK(parent:FindFirstChild "a")
         CHECK(not parent:FindFirstChild "b")
         CHECK(parent:FindFirstChild "c")
@@ -1156,30 +1091,30 @@ end))
 
 TEST("show()", wrap_root(function()
     do CASE "show component"
-        local input = source(true)
+        local input, setInput = createSource(true)
         local function one() return 1 end
 
         local output = show(input, one)
 
         CHECK(output() == 1)
-        input(false)
+        setInput(false)
         CHECK(output() == nil)
     end
 
     do CASE "fallback component"
-        local input = source(true)
+        local input, setInput = createSource(true)
         local function one() return 1 end
         local function two() return 2 end
 
         local output = show(input, one, two)
 
         CHECK(output() == 1)
-        input(false)
+        setInput(false)
         CHECK(output() == 2)
     end
 
     do CASE "updating truth to truthy does not rerun"
-        local input = source(1)
+        local input, setInput = createSource(1)
         local count = 0
 
         local function component()
@@ -1191,18 +1126,18 @@ TEST("show()", wrap_root(function()
 
         CHECK(count == 1)
         CHECK(output() == 1)
-        input(2)
+        setInput(2)
         CHECK(count == 1)
     end
 
     do CASE "updating source passed to component"
-        local input = source(1 :: number?)
+        local input, setInput = createSource(1 :: number?)
         local count = 0
 
         show(input :: () -> number?, function(value: () -> number)
             effect(function()
                 local v = value()
-    
+
                 count += 1
 
                 CHECK(v == count)
@@ -1212,11 +1147,11 @@ TEST("show()", wrap_root(function()
             return true
         end)
 
-        input(2)
+        setInput(2)
         CHECK(count == 2)
-        input(3)
+        setInput(3)
         CHECK(count == 3)
-        input(nil)
+        setInput(nil)
         CHECK(count == 3)
     end
 
@@ -1231,7 +1166,7 @@ TEST("show()", wrap_root(function()
         local count = 0
         local branch = 0
 
-        local weapon = source(nil :: Weapon?)
+        local weapon, setWeapon = createSource(nil :: Weapon?)
 
         effect(function()
             weapon()
@@ -1243,7 +1178,7 @@ TEST("show()", wrap_root(function()
 
         show(weapon, function(weapon: () -> Weapon)
             local enchant = function() return weapon().enchant end
-    
+
             show(enchant, function(enchant: () -> string)
                 effect(function()
                     local e = enchant()
@@ -1271,32 +1206,32 @@ TEST("show()", wrap_root(function()
         end)
 
         branch = 1
-        weapon { id = "1", enchant = "fire" }
+        setWeapon({ id = "1", enchant = "fire" })
         CHECK(count == 2)
 
         branch = 2
-        weapon { id = "1", enchant = "poison" }
+        setWeapon({ id = "1", enchant = "poison" })
         CHECK(count == 4)
 
-        weapon { id = "1", enchant = nil }
+        setWeapon({ id = "1", enchant = nil })
         CHECK(count == 4)
 
         branch = 1
-        weapon { id = "1", enchant = "fire" }
+        setWeapon({ id = "1", enchant = "fire" })
         CHECK(count == 6)
 
-        weapon(nil)
+        setWeapon(nil)
 
         branch = 2
-        weapon { id = "1", enchant = "poison" }
+        setWeapon({ id = "1", enchant = "poison" })
         CHECK(count == 8)
 
         vide.strict = false
     end
 
     do CASE "alt" -- todo: move test
-        local visible = source(true)
-        local count = source(0)
+        local visible, setVisible = createSource(true)
+        local count, setCount = createSource(0)
 
         local outer = 0
         local inner = 0
@@ -1325,24 +1260,24 @@ TEST("show()", wrap_root(function()
         CHECK(inner == 1)
         CHECK(destroyed == 0)
 
-        count(count() + 1)
+        setCount(count() + 1)
         CHECK(outer == 1)
         CHECK(inner == 2)
         CHECK(destroyed == 1)
 
-        visible(false)
+        setVisible(false)
         CHECK(outer == 2)
         CHECK(inner == 3)
         CHECK(destroyed == 2)
 
-        count(count() + 1)
+        setCount(count() + 1)
         CHECK(outer == 2)
         CHECK(inner == 4)
         CHECK(destroyed == 3)
     end
 
     do CASE "delay (destruction)"
-        local input = source(false)
+        local input, setInput = createSource(false)
 
         local obj = {}
         local value_upval
@@ -1359,20 +1294,20 @@ TEST("show()", wrap_root(function()
 
         CHECK(output() == nil)
 
-        input(true)
+        setInput(true)
 
         CHECK(output() == obj)
         CHECK(value_upval() == true)
         CHECK(present_upval() == true)
         CHECK(not cleaned)
 
-        input(false)
+        setInput(false)
 
         CHECK(output() == obj)
         CHECK(value_upval() == true)
         CHECK(present_upval() == false)
         CHECK(not cleaned)
-        
+
         step(0.5)
 
         CHECK(output() == obj)
@@ -1389,7 +1324,7 @@ TEST("show()", wrap_root(function()
     end
 
     do CASE "delay (reactivate before destruction)"
-        local input = source(false)
+        local input, setInput = createSource(false)
 
         local obj = {}
         local value_upval
@@ -1406,20 +1341,20 @@ TEST("show()", wrap_root(function()
 
         CHECK(output() == nil)
 
-        input(true)
+        setInput(true)
 
         CHECK(output() == obj)
         CHECK(value_upval() == true)
         CHECK(present_upval() == true)
         CHECK(not cleaned)
 
-        input(false)
+        setInput(false)
 
         CHECK(output() == obj)
         CHECK(value_upval() == true)
         CHECK(present_upval() == false)
         CHECK(not cleaned)
-        
+
         step(0.5)
 
         CHECK(output() == obj)
@@ -1427,7 +1362,7 @@ TEST("show()", wrap_root(function()
         CHECK(present_upval() == false)
         CHECK(not cleaned)
 
-        input(true)
+        setInput(true)
 
         CHECK(output() == obj)
         CHECK(value_upval() == true)
@@ -1443,7 +1378,7 @@ TEST("show()", wrap_root(function()
     end
 
     do CASE "delay (with fallback)"
-        local input = source(false)
+        local input, setInput = createSource(false)
 
         local obj = {}
         local value_upval
@@ -1474,7 +1409,7 @@ TEST("show()", wrap_root(function()
         CHECK(present_fallback_upval() == true)
         CHECK(not cleaned_fallback)
 
-        input(true)
+        setInput(true)
 
         CHECK(type(output() == "table") and table.find(output(), obj) and table.find(output(), obj_fallback))
         CHECK(value_upval() == true)
@@ -1496,7 +1431,7 @@ end))
 
 TEST("switch()", wrap_root(function()
     do CASE "update on source change"
-        local input = source(true)
+        local input, setInput = createSource(true)
 
         local output = switch(input) {
             [true] = function() return 1 end,
@@ -1509,16 +1444,16 @@ TEST("switch()", wrap_root(function()
 
         CHECK(count == 1)
         CHECK(output() == 1)
-    
-        input(false)
+
+        setInput(false)
         CHECK(output() == 0)
         CHECK(count == 2)
-    
-        input(false)
+
+        setInput(false)
         CHECK(output() == 0)
         CHECK(count == 2)
-    
-        input(NIL)
+
+        setInput(NIL)
         CHECK(output() == nil)
     end
 
@@ -1545,7 +1480,7 @@ TEST("switch()", wrap_root(function()
     -- end
 
     do CASE "scoped switch"
-        local input = source(true)
+        local input, setInput = createSource(true)
 
         local owner_count = 0
         local switch0_count = 0
@@ -1554,25 +1489,25 @@ TEST("switch()", wrap_root(function()
         cleanup(function() owner_count += 1 end)
 
         local output = switch(input) {
-            [true] = function() 
+            [true] = function()
                 cleanup(function() switch1_count += 1 end)
                 return 1
             end,
 
-            [false] = function() 
+            [false] = function()
                 cleanup(function() switch0_count += 1 end)
                 return 0
             end
         }
 
         CHECK(output() == 1)
-        input(false)
+        setInput(false)
         CHECK(switch1_count == 1)
         CHECK(switch0_count == 0)
-        input(true)
+        setInput(true)
         CHECK(switch1_count == 1)
         CHECK(switch0_count == 1)
-        input(NIL)
+        setInput(NIL)
         CHECK(switch1_count == 2)
         CHECK(switch0_count == 1)
         CHECK(owner_count == 0)
@@ -1580,7 +1515,7 @@ TEST("switch()", wrap_root(function()
 
     do CASE "reactive stack resets after error"
     local scopes = require "../src/graph".scopes
-        local input = source(1)
+        local input, _setInput = createSource(1)
 
         local n0 = scopes.n
 
@@ -1600,14 +1535,14 @@ TEST("switch()", wrap_root(function()
     do CASE "strict"
         vide.strict = true
 
-        local input = source(0)
+        local input, setInput = createSource(0)
         local output = switch(input) {
             [0] = function() return 0 end,
             [1] = function() return 1 end,
         }
 
         CHECK(output() == 0)
-        input(1)
+        setInput(1)
         CHECK(output() == 1)
 
         vide.strict = false
@@ -1620,10 +1555,10 @@ end))
 
 TEST("indexes()", wrap_root(function()
     do CASE "use source"
-        local input = source { 1, 2, 3 }
+        local input, setInput = createSource({ 1, 2, 3 })
 
         local output = indexes(input, function(v, k)
-            return tostring(v())    
+            return tostring(v())
         end)
 
         CHECK("" .. input()[1] == output()[1])
@@ -1632,7 +1567,7 @@ TEST("indexes()", wrap_root(function()
     end
 
     do CASE "cache result"
-        local input = source { 1, 2, 3 }
+        local input, setInput = createSource({ 1, 2, 3 })
 
         local count = table.create(3, 0)
 
@@ -1645,7 +1580,7 @@ TEST("indexes()", wrap_root(function()
             return output
         end)
 
-        input { 1, 2, 4 }
+        setInput({ 1, 2, 4 })
 
         CHECK(output()[1]() == 1)
         CHECK(output()[2]() == 2)
@@ -1657,7 +1592,7 @@ TEST("indexes()", wrap_root(function()
     end
 
     do CASE "removal reflected"
-        local input = source { 1, 2, 3 }
+        local input, setInput = createSource({ 1, 2, 3 })
 
         local destroyed = false
 
@@ -1673,7 +1608,7 @@ TEST("indexes()", wrap_root(function()
             return text
         end)
 
-        input { 1, 2 }
+        setInput({ 1, 2 })
 
         local t = output()
 
@@ -1685,7 +1620,7 @@ TEST("indexes()", wrap_root(function()
 
     do CASE "garbage collection"
         do -- check that `output` does not allow gc of `input`
-            local input = source {}
+            local input, _setInput = createSource({})
 
             local _derived = indexes(input, function(v, i)
                 return v
@@ -1696,11 +1631,11 @@ TEST("indexes()", wrap_root(function()
             input = NIL
 
             gc()
-            CHECK(wref[1]) 
+            CHECK(wref[1])
         end
 
         do -- check that `input` allows gc of `output`
-            local input = source {}
+            local input, _setInput = createSource({})
 
             local destroy, output = root(function()
                 return indexes(input, function(v, i)
@@ -1719,10 +1654,10 @@ TEST("indexes()", wrap_root(function()
     end
 
     do CASE "cleanup"
-        local input = source { 1, 2, 3 }
+        local input, _setInput = createSource({ 1, 2, 3 })
 
         local count = table.create(3, 0)
-        
+
         local output = indexes(input, function(v, i)
             cleanup(function()
                 count[i] += 1
@@ -1741,7 +1676,7 @@ TEST("indexes()", wrap_root(function()
     do CASE "reactive stack resets after error"
         local scopes = require "../src/graph".scopes
 
-        local input = source { 1 }
+        local input, _setInput = createSource({ 1 })
 
         local n0 = scopes.n
 
@@ -1761,19 +1696,19 @@ TEST("indexes()", wrap_root(function()
 
     -- practical example based on the graph - recursive update test
     do CASE "recursive update"
-        local items = source { 1 }
+        local items, setItems = createSource({ 1 })
 
         local updated = table.create(100, 0)
 
         indexes(items, function(item)
             effect(function()
                 item()
-                updated[1] += 1    
+                updated[1] += 1
             end)
 
             effect(function()
                 item()
-                updated[2] += 1    
+                updated[2] += 1
             end)
 
             return {}
@@ -1789,7 +1724,7 @@ TEST("indexes()", wrap_root(function()
             updated[4] += 1
         end)
 
-        items { 2 }
+        setItems({ 2 })
 
         CHECK(updated[1] == 2)
         CHECK(updated[2] == 2)
@@ -1800,23 +1735,23 @@ TEST("indexes()", wrap_root(function()
     do CASE "strict"
         vide.strict = true
 
-        local input = source{1}
+        local input, setInput = createSource({1})
         local output = indexes(input, function(v)
             return { v }
         end)
 
         CHECK(output()[1][1]() == 1)
-        input{2}
+        setInput({2})
         CHECK(output()[1][1]() == 2)
 
         vide.strict = false
     end
 
      do CASE "delay"
-        local input = source {}
+        local input, setInput = createSource({})
 
         local cleaned_counts = {} :: Map<number, number>
-    
+
         local output = indexes(input, function(v, i, present)
             cleanup(function()
                 cleaned_counts[i] = (cleaned_counts[i] or 0) + 1
@@ -1841,7 +1776,7 @@ TEST("indexes()", wrap_root(function()
             CHECK(mapped()[1] == nil)
         end
 
-        input { 1, 2 }
+        setInput({ 1, 2 })
 
         do
             CHECK(mapped()[1].value() == 1)
@@ -1851,7 +1786,7 @@ TEST("indexes()", wrap_root(function()
             CHECK(mapped()[2].present())
         end
 
-        input { 2 }
+        setInput({ 2 })
         step(0.5)
 
         do
@@ -1862,7 +1797,7 @@ TEST("indexes()", wrap_root(function()
             CHECK(not mapped()[2].present())
         end
 
-        input { 1, 2 }
+        setInput({ 1, 2 })
         step(0.5 + 0.01)
 
         do
@@ -1873,7 +1808,7 @@ TEST("indexes()", wrap_root(function()
             CHECK(mapped()[2].present())
         end
 
-        input { 3 }
+        setInput({ 3 })
         step(1 + 0.01)
 
         do
@@ -1890,10 +1825,10 @@ end))
 
 TEST("values()", wrap_root(function()
     do CASE "use source"
-        local input = source { 1, 2, 3 }
+        local input, setInput = createSource({ 1, 2, 3 })
 
         local output = values(input, function(v, k)
-            return tostring(v)    
+            return tostring(v)
         end)
 
         CHECK("" .. input()[1] == output()[1])
@@ -1902,7 +1837,7 @@ TEST("values()", wrap_root(function()
     end
 
     do CASE "cache result"
-        local input = source { 1, 2, 3 }
+        local input, setInput = createSource({ 1, 2, 3 })
 
         local count = table.create(3, 0)
 
@@ -1911,7 +1846,7 @@ TEST("values()", wrap_root(function()
             return i
         end)
 
-        input { 1, 3, 2 }
+        setInput({ 1, 3, 2 })
 
         CHECK(output()[1]() == 1)
         CHECK(output()[2]() == 3)
@@ -1923,7 +1858,7 @@ TEST("values()", wrap_root(function()
     end
 
     do CASE "removal reflected"
-        local input = source { 1, 2, 3 }
+        local input, setInput = createSource({ 1, 2, 3 })
 
         local destroyed = false
 
@@ -1939,7 +1874,7 @@ TEST("values()", wrap_root(function()
             return text
         end)
 
-        input { 1, 2 }
+        setInput({ 1, 2 })
 
         local t = output()
 
@@ -1950,14 +1885,14 @@ TEST("values()", wrap_root(function()
     end
 
     do CASE "removal reflected 2"
-        local input = source { 1 }
+        local input, setInput = createSource({ 1 })
 
         local output = values(input, function(v, i)
             return { v = v, i = i }
         end)
 
-        input { 2, 1 }
-        input { 1 }
+        setInput({ 2, 1 })
+        setInput({ 1 })
 
         local t = output()
 
@@ -1968,10 +1903,10 @@ TEST("values()", wrap_root(function()
     end
 
     do CASE "cleanup"
-        local input = source { 1, 2, 3 }
+        local input, _setInput = createSource({ 1, 2, 3 })
 
         local count = table.create(3, 0)
-        
+
         local output = values(input, function(v, i)
             cleanup(function()
                 count[i()] += 1
@@ -1990,7 +1925,7 @@ TEST("values()", wrap_root(function()
     do CASE "reactive stack resets after error"
         local scopes = require "../src/graph".scopes
 
-        local input = source { 1 }
+        local input, _setInput = createSource({ 1 })
 
         local n0 = scopes.n
 
@@ -2009,7 +1944,7 @@ TEST("values()", wrap_root(function()
     end
 
     do CASE "delay"
-        local input = source {}
+        local input, setInput = createSource({})
 
         local cleaned_counts = {} :: Map<number, number>
     
@@ -2037,14 +1972,14 @@ TEST("values()", wrap_root(function()
             CHECK(mapped()[1] == nil)
         end
 
-        input { 1 }
+        setInput({ 1 })
 
         do
             CHECK(mapped()[1].index() == 1)
             CHECK(mapped()[1].present())
         end
 
-        input { 2 }
+        setInput({ 2 })
         step(0.5)
 
         do
@@ -2055,7 +1990,7 @@ TEST("values()", wrap_root(function()
             CHECK(mapped()[2].present())
         end
 
-        input { 1, 2 }
+        setInput({ 1, 2 })
         step(0.5 + 0.01)
 
         do
@@ -2066,7 +2001,7 @@ TEST("values()", wrap_root(function()
             CHECK(mapped()[2].present())
         end
 
-        input { 3 }
+        setInput({ 3 })
         step(1 + 0.01)
 
         do
@@ -2083,7 +2018,7 @@ TEST("values()", wrap_root(function()
     end
 
     do CASE "delayed destruction deferred"
-        local input = source {}
+        local input, setInput = createSource({})
         local output = values(input, function()
             return {}, 1
         end)
@@ -2091,10 +2026,10 @@ TEST("values()", wrap_root(function()
         local count = 0
         effect(function() output(); count += 1 end)
 
-        input { 1, 2, 3 }
+        setInput({ 1, 2, 3 })
         CHECK(count == 2)
 
-        input {}
+        setInput({})
         CHECK(count == 2)
 
         step(1 + 0.01)
@@ -2105,11 +2040,11 @@ end))
 
 TEST("spring()", wrap_root(function()
     do CASE "update source (on next step)"
-        local value = source(10)
+        local value, setValue = createSource(10)
         local sprung = spring(value, 1, 1)
 
         CHECK(sprung() == 10)
-        value(20)
+        setValue(20)
         CHECK(sprung() == 10)
         step(1/60)
         CHECK(sprung() ~= 10)
@@ -2119,7 +2054,7 @@ TEST("spring()", wrap_root(function()
     do CASE "garbage collection"
         --[[
         do -- `output` should not allow gc of `input`
-            local input = source(10)
+            local input, _setInput = createSource(10)
             local _output = spring(input)
 
             local wref = weak { input }
@@ -2131,26 +2066,26 @@ TEST("spring()", wrap_root(function()
         ]]
 
         do -- `input` should allow gc of `output`
-            local input = source(10)
+            local input, _setInput = createSource(10)
             local output = spring(input)
-        
+
             local wref = weak { output }
             output = NIL
-            
+
             gc()
             CHECK(not wref[1])
         end
 
         -- do -- spring data gc
-        --     local input = source(10)
+        --     local input, setInput = createSource(10)
 
         --     local wref do
         --         local output, data = (spring :: any)(input)
-        --         input(input() + 1) -- schedule spring calculation
+        --         setInput(input() + 1) -- schedule spring calculation
         --         local output_node = unpack(capture(output))
         --         wref = weak { output_node, data }
         --     end
-    
+
         --     gc()
         --     CHECK(not wref[1])
         --     CHECK(not wref[2])
@@ -2158,7 +2093,7 @@ TEST("spring()", wrap_root(function()
     end
 
     do CASE "garbage collection (binded)"
-        local input = source(10)
+        local input, _setInput = createSource(10)
         local output = spring(input, 1, 1)
 
         local _label = create "TextLabel" {
@@ -2173,10 +2108,10 @@ TEST("spring()", wrap_root(function()
     end
 
     do CASE "spring finished"
-        local input = source(0)
+        local input, setInput = createSource(0)
         local output = spring(input)
 
-        input(1)
+        setInput(1)
         step(0.05)
         CHECK(output() ~= input()) -- check spring is moving
         step(10) -- spring finished, should be internally removed from queue
@@ -2193,13 +2128,13 @@ TEST("spring()", wrap_root(function()
         --
 
         gc() -- perform full gc
-        input(2) -- spring should be re-added to spring queue
+        setInput(2) -- spring should be re-added to spring queue
         step(0) -- process spring queue
         CHECK(count == 1) -- check spring was rescheduled correctly
     end
 
     do CASE "spring control"
-        local input = source(1)
+        local input, _setInput = createSource(1)
         local output, control = spring(input)
 
         local value = input()
@@ -2226,8 +2161,8 @@ end))
 
 TEST("untrack()", wrap_root(function()
     do CASE "does not register dependency"
-        local a = source(0)
-        local b = source(0)
+        local a, setA = createSource(0)
+        local b, setB = createSource(0)
 
         local count = 0
 
@@ -2237,19 +2172,19 @@ TEST("untrack()", wrap_root(function()
             b()
         end)
 
-        b(1)
+        setB(1)
         CHECK(count == 2)
 
-        a(1)
+        setA(1)
         CHECK(count == 2)
 
         CHECK(a() == untrack(a))
     end
 
     do CASE "derived source"
-        local a = source(0)
-        local b = source(0)
-        local c = source(0)
+        local a, setA = createSource(0)
+        local b, setB = createSource(0)
+        local c, setC = createSource(0)
 
         local d = function()
             return a() + b()
@@ -2263,11 +2198,11 @@ TEST("untrack()", wrap_root(function()
             c()
         end)
 
-        c(1)
+        setC(1)
         CHECK(count == 2)
 
-        a(1)
-        b(1)
+        setA(1)
+        setB(1)
         CHECK(count == 2)
     end
 
@@ -2276,7 +2211,7 @@ TEST("untrack()", wrap_root(function()
         local inner_count = 0
         local cleaned_count = 0
 
-        local input = source(0)
+        local input, setInput = createSource(0)
 
         local _, output, destroy = root(function(destroy)
             local output = derive(function()
@@ -2285,11 +2220,11 @@ TEST("untrack()", wrap_root(function()
                 return untrack(function()
                     return derive(function()
                         inner_count += 1
-    
+
                         cleanup(function()
                             cleaned_count += 1
                         end)
-    
+
                         return tostring(input())
                     end)
                 end)
@@ -2306,7 +2241,7 @@ TEST("untrack()", wrap_root(function()
 
         CHECK(output2() == "0")
 
-        input(1)
+        setInput(1)
 
         CHECK(outer_count == 1)
         CHECK(inner_count == 2)
@@ -2385,11 +2320,11 @@ end)
 
 TEST("changed()", wrap_root(function()
     do CASE "outputs"
-        local output = source(nil)
+        local output, setOutput = createSource(nil)
 
         local text = create "TextLabel" {
             Text = "a",
-            changed("Text", output)
+            changed("Text", setOutput)
         }
 
         CHECK(output() == "a")
@@ -2399,11 +2334,11 @@ TEST("changed()", wrap_root(function()
 
     do CASE "connection disconnected"
         local _, text, destroy = root(function(destroy)
-            local output = source(nil)
+            local _output, setOutput = createSource(nil)
 
             return create "TextLabel" {
                 Text = "a",
-                changed("Text", output)
+                changed("Text", setOutput)
             }, destroy
         end)
 
@@ -2419,7 +2354,7 @@ end))
 
 TEST("batch()", wrap_root(function()
     do CASE "evaluation deferred"
-        local a = source(0)
+        local a, setA = createSource(0)
 
         local count = { b = 0, b2 = 0, c = 0 }
 
@@ -2439,7 +2374,7 @@ TEST("batch()", wrap_root(function()
         end)
 
         batch(function()
-            a(1)
+            setA(1)
             CHECK(count.b == 1)
             CHECK(count.b2 == 1)
             CHECK(count.c == 1)
@@ -2454,9 +2389,9 @@ TEST("batch()", wrap_root(function()
     end
 
     do CASE "recursive call"
-        local a1 = source(0)
-        local a2 = source(0)
-        local a3 = source(0)
+        local a1, setA1 = createSource(0)
+        local a2, setA2 = createSource(0)
+        local a3, setA3 = createSource(0)
 
         local count = { b1 = 0, b2 = 0, b3 = 0 }
 
@@ -2476,11 +2411,11 @@ TEST("batch()", wrap_root(function()
         end)
 
         batch(function()
-            a1(1)
+            setA1(1)
             batch(function()
-                a2(2)
+                setA2(2)
             end)
-            a3(3)
+            setA3(3)
             CHECK(count.b1 == 1)
             CHECK(count.b2 == 1)
             CHECK(count.b3 == 1)
@@ -2497,9 +2432,9 @@ TEST("batch()", wrap_root(function()
 
     do CASE "subsequent updates do not batch"
 
-        local a = source(0)
-        local b = source(0)
-        local c = source(0)
+        local a, setA = createSource(0)
+        local b, setB = createSource(0)
+        local c, setC = createSource(0)
         local d_n = 0
 
         effect(function()
@@ -2509,12 +2444,12 @@ TEST("batch()", wrap_root(function()
         end)
 
         effect(function()
-            b(a())
-            c(a())
+            setB(a())
+            setC(a())
         end)
-        
+
         batch(function()
-            a(1)
+            setA(1)
         end)
 
         CHECK(d_n == 3)
@@ -2529,17 +2464,17 @@ TEST("batch()", wrap_root(function()
 
         ]]
 
-        local a = source(0)
+        local a, setA = createSource(0)
 
-        local b = source(0)
-        local c = source(0)
-        local d = source(0)
+        local b, setB = createSource(0)
+        local c, setC = createSource(0)
+        local d, setD = createSource(0)
 
         local count = { b = 0, c = 0, d = 0 }
         effect(function()
             batch(function()
-                b(a() % 2 == 0 and 1 or 0)
-                c(a() * 2)
+                setB(a() % 2 == 0 and 1 or 0)
+                setC(a() * 2)
             end)
             count.b += 1
             count.c += 1
@@ -2547,18 +2482,18 @@ TEST("batch()", wrap_root(function()
 
         effect(function()
             batch(function()
-                d(b() + c())
+                setD(b() + c())
             end)
             count.d += 1
         end)
 
-        a(1)
+        setA(1)
         CHECK(count.b == 2)
         CHECK(count.c == 2)
         CHECK(count.d == 2)
         CHECK(d() == 2)
 
-        a(3)
+        setA(3)
         CHECK(count.b == 3)
         CHECK(count.c == 3)
         CHECK(count.d == 3)
@@ -2568,24 +2503,24 @@ TEST("batch()", wrap_root(function()
     do CASE "recursive queue flush diamond A,B,C,D,E"
         --[[
         where b and c batches d
-        
+
         a > b >     e
           > c > d >
-        
+
         ]]
 
-        local a = source(0)
+        local a, setA = createSource(0)
 
-        local b = source(0)
-        local c = source(0)
-        local d = source(0)
-        local e = source(0)
+        local b, setB = createSource(0)
+        local c, setC = createSource(0)
+        local d, setD = createSource(0)
+        local e, setE = createSource(0)
 
         local count = { b = 0, c = 0, d = 0, e = 0 }
         effect(function()
             batch(function()
-                b(a() % 2 == 0 and 1 or 0)
-                c(a() * 2)
+                setB(a() % 2 == 0 and 1 or 0)
+                setC(a() * 2)
             end)
             count.b += 1
             count.c += 1
@@ -2593,21 +2528,21 @@ TEST("batch()", wrap_root(function()
 
         effect(function()
             batch(function()
-                d(c() * 2)
+                setD(c() * 2)
             end)
             count.d += 1
         end)
 
         effect(function()
             batch(function()
-                e(b() + d())
+                setE(b() + d())
             end)
             count.e += 1
         end)
 
         CHECK(e() == 1)
 
-        a(1)
+        setA(1)
 
         CHECK(count.b == 2)
         CHECK(count.c == 2)
@@ -2615,7 +2550,7 @@ TEST("batch()", wrap_root(function()
         CHECK(count.e == 3)
         CHECK(e() == 4)
 
-        a(3)
+        setA(3)
         CHECK(count.b == 3)
         CHECK(count.c == 3)
         CHECK(count.d == 3)
@@ -2628,25 +2563,25 @@ TEST("batch()", wrap_root(function()
         --[[
 
         a > b > d > E > G
-          > c ^   > F  
+          > c ^   > F
 
         ]]
 
-        local a = source(0)
+        local a, setA = createSource(0)
 
-        local b = source(0)
-        local c = source(0)
-        local d = source(0)
-        
-        local e = source(0)
-        local f = source(0)
-        local g = source(0)
+        local b, setB = createSource(0)
+        local c, setC = createSource(0)
+        local d, setD = createSource(0)
+
+        local e, setE = createSource(0)
+        local f, setF = createSource(0)
+        local g, setG = createSource(0)
 
         local count = { b = 0, c = 0, d = 0, e = 0, f = 0, g = 0 }
         effect(function()
             batch(function()
-                b(a() % 2 == 0 and 1 or 0)
-                c(a() * 2)
+                setB(a() % 2 == 0 and 1 or 0)
+                setC(a() * 2)
             end)
             count.b += 1
             count.c += 1
@@ -2654,15 +2589,15 @@ TEST("batch()", wrap_root(function()
 
         effect(function()
             batch(function()
-                d(b() + c())
+                setD(b() + c())
             end)
             count.d += 1
         end)
 
         effect(function()
             batch(function()
-                e(d() % 2 == 0 and 1 or 0)
-                f(d() * 2)
+                setE(d() % 2 == 0 and 1 or 0)
+                setF(d() * 2)
             end)
             count.e += 1
             count.f += 1
@@ -2670,12 +2605,12 @@ TEST("batch()", wrap_root(function()
 
         effect(function()
             batch(function()
-                g(e() + f())
+                setG(e() + f())
             end)
             count.g += 1
         end)
 
-        a(1)
+        setA(1)
         CHECK(count.b == 2)
         CHECK(count.c == 2)
         CHECK(count.d == 2)
@@ -2685,7 +2620,7 @@ TEST("batch()", wrap_root(function()
         CHECK(d() == 2)
         CHECK(g() == 5)
 
-        a(3)
+        setA(3)
         CHECK(count.b == 3)
         CHECK(count.c == 3)
         CHECK(count.d == 3)
@@ -2706,12 +2641,12 @@ TEST("read()", wrap_root(function()
     end
 
     do CASE "read source"
-        local src = source(1) :: () -> number
+        local src, _setSrc = createSource(1)
         CHECK(read(src) == 1)
     end
 
     do CASE "push_scope_as_child_of source"
-        local src = source(0)
+        local src, setSrc = createSource(0)
 
         local count = 0
         effect(function()
@@ -2719,7 +2654,7 @@ TEST("read()", wrap_root(function()
             count += 1
         end)
 
-        src(1)
+        setSrc(1)
         CHECK(count == 2)
     end
 end))
@@ -2827,7 +2762,7 @@ TEST("nested effects cases", function()
     local cleaned = 0
 
     local function Count()
-        local count = source(0)
+        local count, _setCount = createSource(0)
 
         effect(function()
             count()
@@ -2839,7 +2774,7 @@ TEST("nested effects cases", function()
     end
 
     local function App(destroy)
-        local name = source "a"
+        local name, setName = createSource("a")
 
         effect(function()
             name()
@@ -2849,7 +2784,7 @@ TEST("nested effects cases", function()
         CHECK(ran == 1)
         CHECK(cleaned == 0)
 
-        name "b"
+        setName("b")
 
         CHECK(ran == 2)
         CHECK(cleaned == 1)
@@ -2872,7 +2807,7 @@ TEST("graph edge cases", wrap_root(function()
 
         ]]
 
-        local a = source(0)
+        local a, setA = createSource(0)
 
         local b = derive(function() return (a() % 2 == 0) and 1 or 0 end)
         local c = derive(function() return a() * 2 end)
@@ -2883,13 +2818,13 @@ TEST("graph edge cases", wrap_root(function()
         effect(function() c(); count.c += 1 end)
         effect(function() d(); count.d += 1 end)
 
-        a(1)
+        setA(1)
         CHECK(count.b == 2)
         CHECK(count.c == 2)
         CHECK(count.d == 2)
         CHECK(d() == 2)
 
-        a(3)
+        setA(3)
         CHECK(count.b == 2)
         CHECK(count.c == 3)
         CHECK(count.d == 3)
@@ -2904,7 +2839,7 @@ TEST("graph edge cases", wrap_root(function()
 
         ]]
 
-        local a = source(0)
+        local a, setA = createSource(0)
 
         local b = derive(function() return (a() % 2 == 0) and 1 or 0 end)
         local c = derive(function() return a() * 2 end)
@@ -2919,7 +2854,7 @@ TEST("graph edge cases", wrap_root(function()
 
         CHECK(e() == 1)
 
-        a(1)
+        setA(1)
 
         CHECK(count.b == 2)
         CHECK(count.c == 2)
@@ -2927,7 +2862,7 @@ TEST("graph edge cases", wrap_root(function()
         CHECK(count.e == 3) -- todo: redundant re-eval
         CHECK(e() == 4)
 
-        a(3)
+        setA(3)
         CHECK(count.b == 2)
         CHECK(count.c == 3)
         CHECK(count.d == 3)
@@ -2936,30 +2871,30 @@ TEST("graph edge cases", wrap_root(function()
     end
 
     do CASE "repeated read"
-        local a = source(0)
+        local a, setA = createSource(0)
         local b = derive(function() return a() + a() end)
 
         local count = 0
         effect(function() b(); count += 1 end)
 
-        a(1)
+        setA(1)
         CHECK(b() == 2)
         CHECK(count == 2)
     end
 
     do CASE "do not destroy children"
-        local parent = source(0)   
+        local parent, setParent = createSource(0)
 
         local _,
             destroy,
             parent_to_destroy,
             update_parent_to_destroy
         = root(function(destroy)
-            local src = source(0)
+            local src, setSrc = createSource(0)
             return
                 destroy,
                 derive(function() return src() end),
-                src
+                setSrc
         end)
 
         local count = 0
@@ -2970,17 +2905,17 @@ TEST("graph edge cases", wrap_root(function()
             parent_to_destroy()
         end)
 
-        parent(parent() + 1)
+        setParent(parent() + 1)
         CHECK(count == 2)
         update_parent_to_destroy(1)
         CHECK(count == 3)
 
         destroy()
-        
+
         update_parent_to_destroy(2)
         CHECK(count == 3)
-        
-        parent(parent() + 1)
+
+        setParent(parent() + 1)
         CHECK(count == 4)
     end
 
@@ -2998,17 +2933,17 @@ TEST("graph edge cases", wrap_root(function()
             parent,
             update_parent
         = root(function(destroy)
-            local src = source(0)
+            local src, setSrc = createSource(0)
             return
                 destroy,
                 derive(function() return src() end),
-                src
+                setSrc
         end)
 
         local _, destroy_child, _child_B = nil, function() end, nil
 
         local count_A = 0
-    
+
         -- child_A
         effect(function()
             count_A += 1
@@ -3035,7 +2970,7 @@ TEST("strict", wrap_root(function()
     vide.strict = true
 
     do CASE "error on derived callback yield"
-        local src = source(1)
+        local src, _setSrc = createSource(1)
 
         local ok = pcall(function()
             local _derived = derive(function()
@@ -3048,7 +2983,7 @@ TEST("strict", wrap_root(function()
     end
 
     do CASE "error on effecter callback yield"
-        local src = source(1)
+        local src, _setSrc = createSource(1)
 
         local ok = pcall(function()
             effect(function()
@@ -3061,7 +2996,7 @@ TEST("strict", wrap_root(function()
     end
 
     do CASE "run derived callback twice"
-        local src = source(1)
+        local src, setSrc = createSource(1)
         local count = 0
 
         local _ = derive(function()
@@ -3070,12 +3005,12 @@ TEST("strict", wrap_root(function()
         end)
 
         CHECK(count == 2)
-        src(2)
+        setSrc(2)
         CHECK(count == 4)
     end
 
     do CASE "run effect callback twice"
-        local src = source(1)
+        local src, setSrc = createSource(1)
         local count = 0
 
         effect(function()
@@ -3084,12 +3019,12 @@ TEST("strict", wrap_root(function()
         end)
 
         CHECK(count == 2)
-        src(2)
+        setSrc(2)
         CHECK(count == 4)
     end
 
     do CASE "values() error if duplicate"
-        local src = source { 1, 2, 1 }
+        local src, _setSrc = createSource({ 1, 2, 1 })
 
         local ok = pcall(function()
             values(src, function() return {} end)
@@ -3127,7 +3062,7 @@ TEST("strict", wrap_root(function()
     end
 
     do CASE "effect counter"
-        local src = source(true)
+        local src, setSrc = createSource(true)
 
         local count = 0
 
@@ -3138,12 +3073,12 @@ TEST("strict", wrap_root(function()
         end, count)
 
         CHECK(count == 2)
-        src(not src())
+        setSrc(not src())
         CHECK(count == 4)
     end
 
     do CASE "effect using derived source"
-        local input = source(true)
+        local input, setInput = createSource(true)
 
         local output = derive(function()
             return input()
@@ -3158,25 +3093,25 @@ TEST("strict", wrap_root(function()
 
         CHECK(count == 2)
 
-        input(false)
+        setInput(false)
 
         CHECK(count == 4)
     end
 
     do CASE "destruction of active scope"
-        local src = source(false)
+        local src, setSrc = createSource(false)
         local count = 0
 
         root(function()
             show(src, function()
-                src(false)
+                setSrc(false)
                 cleanup(function() count += 1 end)
                 return {}
             end)
         end)
 
         local ok = pcall(function()
-            src(true)
+            setSrc(true)
         end)
 
         CHECK(count == 0)
@@ -3184,7 +3119,7 @@ TEST("strict", wrap_root(function()
     end
 
     do CASE "destruction of active scope in indexes"
-        local src = source {}
+        local src, setSrc = createSource({})
 
         local count_1 = 0
         local count_2 = 0
@@ -3194,7 +3129,7 @@ TEST("strict", wrap_root(function()
                 untrack(function()
                     indexes(src, function()
                         cleanup(function() count_1 += 1 end)
-                        src {}
+                        setSrc({})
                         cleanup(function() count_2 += 1 end)
                         return {}
                     end)
@@ -3203,14 +3138,14 @@ TEST("strict", wrap_root(function()
         end)
 
         local ok = pcall(function()
-            src { 1 }
+            setSrc({ 1 })
         end)
 
         CHECK(not ok)
     end
 
     do CASE "destruction of active scope in values"
-        local src = source {}
+        local src, setSrc = createSource({})
 
         local count_1 = 0
         local count_2 = 0
@@ -3220,7 +3155,7 @@ TEST("strict", wrap_root(function()
                 untrack(function()
                     values(src, function()
                         cleanup(function() count_1 += 1 end)
-                        src {}
+                        setSrc({})
                         cleanup(function() count_2 += 1 end)
                         return {}
                     end)
@@ -3229,7 +3164,7 @@ TEST("strict", wrap_root(function()
         end)
 
         local ok = pcall(function()
-            src { {} }
+            setSrc({ {} })
         end)
 
         CHECK(not ok)
