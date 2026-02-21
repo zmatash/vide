@@ -26,11 +26,9 @@ local timeout, update_timeouts = require "./timeout"()
 local flags = require "./flags"
 
 export type Source<T> = source_module.Source<T>
-export type source<T> = Source<T>
 export type Getter<T> = source_module.Getter<T>
 export type Setter<T> = source_module.Setter<T>
 export type Context<T> = context.Context<T>
-export type context<T> = Context<T>
 
 local function step(dt: number)
     if game then debug.profilebegin("VIDE STEP") end
