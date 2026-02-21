@@ -4,6 +4,8 @@ local vide = require(script.lib)
 
 export type source<T> = vide.source<T>
 export type Source<T> = vide.Source<T>
+export type Getter<T> = vide.Getter<T>
+export type Setter<T> = vide.Setter<T>
 export type context<T> = vide.context<T>
 export type Context<T> = vide.Context<T>
 

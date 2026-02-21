@@ -1,4 +1,4 @@
-local source = require "./source"
+local source = (require "./source").source
 local derive = require "./derive"
 local effect = require "./effect"
 local untrack = require "./untrack"

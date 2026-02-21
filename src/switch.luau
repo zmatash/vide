@@ -1,5 +1,5 @@
 local branch = require "./branch"
-local source = require "./source"
+local source = (require "./source").source
 local effect = require "./effect"
 local timeout = require "./timeout" ()
 

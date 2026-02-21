@@ -10,6 +10,7 @@ local vide = require "../../vide"
     local mount = vide.mount
     local create = vide.create
     local source = vide.source
+    local createSource = vide.createSource
     local effect = vide.effect
     local derive = vide.derive
     local switch = vide.switch
@@ -420,6 +421,82 @@ TEST("source()", wrap_root(function()
         CHECK(count == 2)
         src(b)
         CHECK(count == 2)
+    end
+end))
+
+TEST("createSource()", wrap_root(function()
+    do CASE "create source with getter and setter"
+        local counter, setCounter = createSource(1)
+        CHECK(counter() == 1)
+    end
+
+    do CASE "set and get source value"
+        local counter, setCounter = createSource(1)
+        setCounter(2)
+        CHECK(counter() == 2)
+    end
+
+    do CASE "does not update if same value"
+        local counter, setCounter = createSource(1)
+
+        local count = 0
+        effect(function()
+            counter()
+            count += 1
+        end)
+
+        CHECK(count == 1)
+        setCounter(1)
+        CHECK(count == 1)
+        setCounter(2)
+        CHECK(count == 2)
+    end
+
+    do CASE "does update if same value is mutable table"
+        local get, set = createSource({})
+
+        local count = 0
+        effect(function()
+            get()
+            count += 1
+        end)
+
+        CHECK(count == 1)
+        set(get())
+        CHECK(count == 2)
+    end
+
+    do CASE "does not update if same value is frozen table"
+        local a = table.freeze {}
+        local b = table.freeze {}
+
+        local get, set = createSource(a)
+
+        local count = 0
+        effect(function()
+            get()
+            count += 1
+        end)
+
+        CHECK(count == 1)
+        set(a)
+        CHECK(count == 1)
+        set(b)
+        CHECK(count == 2)
+        set(b)
+        CHECK(count == 2)
+    end
+
+    do CASE "getter works in derive"
+        local counter, setCounter = createSource(1)
+
+        local doubled = derive(function()
+            return counter() * 2
+        end)
+
+        CHECK(doubled() == 2)
+        setCounter(5)
+        CHECK(doubled() == 10)
     end
 end))
 
