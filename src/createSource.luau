@@ -28,4 +28,4 @@ local function createSource<T>(initial_value: T): (Getter<T>, Setter<T>)
     return getter, setter
 end
 
-return createSource :: (<T>(initial_value: T) -> (Getter<T>, Setter<T>)) & (<T>() -> (Getter<T>, Setter<T>))
+return createSource :: <T>(initial_value: T?) -> (Getter<T>, Setter<T>)
